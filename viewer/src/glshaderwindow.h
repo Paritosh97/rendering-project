@@ -47,6 +47,9 @@ public slots:
     void opaqueClicked();
     void updateLightIntensity(int lightSliderValue);
     void updateShininess(int shininessSliderValue);
+    void updateAmbientCoefficient(int ambientSliderValue);
+    void updateDiffuseCoefficient(int diffuseSliderValue);
+    void updateSpecularCoefficient(int specularSliderValue);
     void updateEta(int etaSliderValue);
 
 protected:
@@ -104,6 +107,9 @@ private:
     float eta;
     float lightIntensity;
     float shininess;
+    float ambientCoefficient;
+    float diffuseCoefficient;
+    float specularCoefficient;
     float lightDistance;
     float groundDistance;
 

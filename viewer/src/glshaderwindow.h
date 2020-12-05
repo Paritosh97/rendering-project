@@ -49,8 +49,8 @@ public slots:
     void updateShininess(int shininessSliderValue);
     void updateAmbientCoefficient(int ambientSliderValue);
     void updateDiffuseCoefficient(int diffuseSliderValue);
-    void updateSpecularCoefficient(int specularSliderValue);
     void updateEta(int etaSliderValue);
+    void updateEtaK(int etaKSliderValue);
 
 protected:
     void mousePressEvent(QMouseEvent *e);
@@ -105,11 +105,11 @@ private:
     bool blinnPhong;
     bool transparent;
     float eta;
+    float eta_k;
     float lightIntensity;
     float shininess;
     float ambientCoefficient;
     float diffuseCoefficient;
-    float specularCoefficient;
     float lightDistance;
     float groundDistance;
 

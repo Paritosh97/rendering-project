@@ -28,7 +28,7 @@ void main( void )
     // computing eyeVector, lightVector.
     lightVector.xyz = normalize(lightPosition - vertex.xyz);
     lightVector.w = 0;
-    eyeVector = normalize(-vertex);
+    eyeVector = normalize(vec4(matrix[3]) - vertex);
 
     gl_Position = perspective * matrix * vertex;
 }

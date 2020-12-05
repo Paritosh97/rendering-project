@@ -32,29 +32,6 @@ float CalculateFresnel(float cos_td)
     return (f_s + f_p)/2;
 }
 
-vec4 CalcBlinnPhong()
-{
-    vec4 normal = normalize(vertNormal);
-    vec4 halfwayDir = normalize(eyeVector + lightVector);
-
-    // diffuse shading
-    float diff = max(dot(normal, lightVector), 0.0);
-
-    // specular shading
-    vec4 reflectDir = reflect(-lightVector, normal);
-    
-    float cos_td = dot(halfwayDir.xyz, lightVector.xyz);
-    float fresnelCoefficient = CalculateFresnel(cos_td);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
-
-    // combine results
-    vec4 ambient  = dirLight.ambient  * vertColor;
-    vec4 diffuse  = dirLight.diffuse  * diff * vertColor;
-    vec4 specular = fresnelCoefficient * spec * vertColor;
-
-    return (ambient + diffuse + specular);
-}
-
 float DistributionGGX(vec3 N, vec3 H)
 {
     float NdotH  = max(dot(N, H), 0.0);
@@ -73,18 +50,15 @@ float CalculateG(float cos_t, float sin_t)
     return 2/(1+sqrt(1+(shininess*shininess*tan_t*tan_t)));
 }
 
-vec4 CalcCookTorrance()
+vec4 CalcBlinnPhongSpecular(float F, vec4 normal, vec4 halfwayDir)
+{    
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
+
+    return (F * spec * vertColor);
+}
+
+vec4 CalcCookTorranceSpecular(float F, vec4 normal, vec4 halfwayDir)
 {
-    vec4 normal = normalize(vertNormal);
-    vec4 halfwayDir = normalize(eyeVector + lightVector);
-
-    // diffuse shading
-    float diff = max(dot(normal, lightVector), 0.0);
-
-    // specular shading
-    vec4 reflectDir = reflect(-lightVector, normal);
-    
-    float cos_td = dot(halfwayDir.xyz, lightVector.xyz);
     float cos_ti = dot(normal, lightVector);
     float sin_ti = length(cross(normal.xyz, lightVector.xyz));
     float cos_to = dot(normal, eyeVector);
@@ -93,23 +67,33 @@ vec4 CalcCookTorrance()
     float D = DistributionGGX(normal.xyz, halfwayDir.xyz);    
     float G1_ti = CalculateG(cos_ti, sin_ti);
     float G1_td = CalculateG(cos_to, sin_to);
-    float F = CalculateFresnel(cos_td);
 
     float num = F * D * G1_ti * G1_td;
     float denom = 4 * cos_ti * cos_to;
 
-    // combine results
-    vec4 ambient  = dirLight.ambient  * vertColor;
-    vec4 diffuse  = dirLight.diffuse  * diff * vertColor;
-    vec4 specular = vertColor * num/denom;
-
-    return (ambient + diffuse + specular);
+    return (vertColor * num/denom);
 }
 
 void main( void )
-{
+{   
+    // ambient shading
+    vec4 ambient  = dirLight.ambient  * vertColor;
+
+    // diffuse shading
+    float diff = max(dot(vertNormal, lightVector), 0.0);
+    vec4 diffuse  = dirLight.diffuse  * diff * vertColor;
+
+    // specular shading
+    vec4 specular;
+    vec4 halfwayDir = normalize(eyeVector + lightVector);
+
+    float cos_td = dot(halfwayDir.xyz, lightVector.xyz);
+    float F = CalculateFresnel(cos_td);
+
     if(blinnPhong)
-        fragColor = lightIntensity * CalcBlinnPhong();
+        specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir);
     else
-        fragColor = lightIntensity * CalcCookTorrance();
+        specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir);
+
+    fragColor = ambient + diffuse + specular;
 }

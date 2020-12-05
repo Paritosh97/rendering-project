@@ -86,14 +86,13 @@ void main( void )
     // specular shading
     vec4 specular;
     vec4 halfwayDir = normalize(eyeVector + lightVector);
-
     float cos_td = dot(halfwayDir.xyz, lightVector.xyz);
     float F = CalculateFresnel(cos_td);
-
     if(blinnPhong)
         specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir);
     else
         specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir);
 
+    // combine results
     fragColor = ambient + diffuse + specular;
 }

@@ -29,6 +29,9 @@ void main( void )
     textCoords = texcoords;
 
     // TODO: compute eyeVector, lightVector. 
+    lightVector.xyz = normalize(lightPosition - vertex.xyz);
+    lightVector.w = 0;
+    eyeVector = normalize(vec4(matrix[3]) - vertex);
 
     gl_Position = perspective * matrix * vertex;
 }

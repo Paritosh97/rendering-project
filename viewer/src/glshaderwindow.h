@@ -43,11 +43,19 @@ public slots:
     void setShader(const QString& size);
     void cookTorranceClicked();
     void blinnPhongClicked();
+    void metallicFresnelClicked();
     void transparentClicked();
     void opaqueClicked();
     void updateLightIntensity(int lightSliderValue);
     void updateShininess(int shininessSliderValue);
+    void updateAmbientCoefficient(int ambientSliderValue);
+    void updateDiffuseCoefficient(int diffuseSliderValue);
     void updateEta(int etaSliderValue);
+    void updateEtaK(int etaKSliderValue);
+    void useTextureClicked();
+    void useColorClicked();
+    void updateColor();
+    void changeColor(QColor newColor);
 
 protected:
     void mousePressEvent(QMouseEvent *e);
@@ -99,11 +107,16 @@ private:
     // ComputeShader:
     GLuint ssbo[4];
     // Parameters controlled by UI
-    bool blinnPhong;
+    int modelChoice;
     bool transparent;
     float eta;
+    float eta_k;
+    bool useTexture;
+    QVector4D modelColor;
     float lightIntensity;
     float shininess;
+    float ambientCoefficient;
+    float diffuseCoefficient;
     float lightDistance;
     float groundDistance;
 

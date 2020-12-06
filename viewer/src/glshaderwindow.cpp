@@ -8,7 +8,9 @@
 // Buttons/sliders for User interface:
 #include <QGroupBox>
 #include <QRadioButton>
+#include <QPushButton>
 #include <QSlider>
+#include <QColorDialog>
 #include <QLabel>
 // Layouts for User interface
 #include <QVBoxLayout>
@@ -25,10 +27,7 @@ glShaderWindow::glShaderWindow(QWindow *parent)
       m_program(0), ground_program(0), compute_program(0), shadowMapGenerationProgram(0),
       g_vertices(0), g_normals(0), g_texcoords(0), g_colors(0), g_indices(0),
       gpgpu_vertices(0), gpgpu_normals(0), gpgpu_texcoords(0), gpgpu_colors(0), gpgpu_indices(0),
-      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0),
-      isGPGPU(false), hasComputeShaders(false), blinnPhong(true), transparent(true), eta(1.5), lightIntensity(1.0f), shininess(50.0f), lightDistance(5.0f), groundDistance(0.78),
-      shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), 
-      m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
+      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), modelChoice(0), transparent(true), eta(1.5), eta_k(1.5), useTexture(true), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
 {
     // Default values you might want to tinker with
     shadowMapDimension = 2048;
@@ -170,15 +169,21 @@ void glShaderWindow::openNewEnvMap() {
     }
 }
 
-void glShaderWindow::cookTorranceClicked()
+void glShaderWindow::blinnPhongClicked()
 {
-    blinnPhong = false;
+    modelChoice = 0;
     renderNow();
 }
 
-void glShaderWindow::blinnPhongClicked()
+void glShaderWindow::cookTorranceClicked()
 {
-    blinnPhong = true;
+    modelChoice = 1;
+    renderNow();
+}
+
+void glShaderWindow::metallicFresnelClicked()
+{
+    modelChoice = 2;
     renderNow();
 }
 
@@ -206,10 +211,56 @@ void glShaderWindow::updateShininess(int shininessSliderValue)
     renderNow();
 }
 
+void glShaderWindow::updateAmbientCoefficient(int ambientSliderValue)
+{
+    ambientCoefficient = (float)ambientSliderValue/200;
+    renderNow();
+}
+
+void glShaderWindow::updateDiffuseCoefficient(int diffuseSliderValue)
+{
+    diffuseCoefficient = (float)diffuseSliderValue/200;
+    renderNow();
+}
+
 void glShaderWindow::updateEta(int etaSliderValue)
 {
     eta = etaSliderValue/100.0;
     renderNow();
+}
+
+void glShaderWindow::updateEtaK(int etaKSliderValue)
+{
+    eta_k = etaKSliderValue/100.0;
+    renderNow();
+}
+
+void glShaderWindow::useTextureClicked()
+{
+    useTexture = true;
+    renderNow();
+}
+
+void glShaderWindow::useColorClicked()
+{
+    useTexture = false;
+    renderNow();
+}
+
+void glShaderWindow::changeColor(QColor newColor)
+{
+    modelColor.setX((float)newColor.red()/255.0f);
+    modelColor.setY((float)newColor.green()/255.0f);
+    modelColor.setZ((float)newColor.blue()/255.0f);
+    modelColor.setW((float)newColor.alpha()/255.0f);
+    renderNow();
+}
+
+void glShaderWindow::updateColor()
+{
+    QColorDialog *colorDialog = new QColorDialog(QColor(modelColor.x()*255, modelColor.y()*255, modelColor.z()*255, modelColor.w()*255));
+    colorDialog->show();
+    connect(colorDialog,SIGNAL(currentColorChanged(QColor)),this,SLOT(changeColor(QColor)));    
 }
 
 QWidget *glShaderWindow::makeAuxWindow()
@@ -224,15 +275,30 @@ QWidget *glShaderWindow::makeAuxWindow()
     QGroupBox *groupBox = new QGroupBox("Specular Model selection");
     QRadioButton *radio1 = new QRadioButton("Blinn-Phong");
     QRadioButton *radio2 = new QRadioButton("Cook-Torrance");
-    if (blinnPhong) radio1->setChecked(true);
-    else radio1->setChecked(true);
+    QRadioButton *radio3 = new QRadioButton("Artist Friendly Metallic Fresnel");
+    switch(modelChoice)
+    {
+        case 0 :
+            radio1->setChecked(true);
+            break;
+
+        case 1 :
+            radio2->setChecked(true);
+            break;
+
+        case 2 :
+            radio3->setChecked(true);
+            break;
+    }
     connect(radio1, SIGNAL(clicked()), this, SLOT(blinnPhongClicked()));
     connect(radio2, SIGNAL(clicked()), this, SLOT(cookTorranceClicked()));
+    connect(radio3, SIGNAL(clicked()), this, SLOT(metallicFresnelClicked()));
 
-    QVBoxLayout *vbox = new QVBoxLayout;
-    vbox->addWidget(radio1);
-    vbox->addWidget(radio2);
-    groupBox->setLayout(vbox);
+    QVBoxLayout *vbox1 = new QVBoxLayout;
+    vbox1->addWidget(radio1);
+    vbox1->addWidget(radio2);
+    vbox1->addWidget(radio3);
+    groupBox->setLayout(vbox1);
     buttons->addWidget(groupBox);
 
     QGroupBox *groupBox2 = new QGroupBox("Surface:");
@@ -266,6 +332,39 @@ QWidget *glShaderWindow::makeAuxWindow()
     outer->addLayout(hboxLight);
     outer->addWidget(lightSlider);
 
+    // Reflection Coefficient sliders
+    QSlider* ambientSlider = new QSlider(Qt::Horizontal);
+    ambientSlider->setTickPosition(QSlider::TicksBelow);
+    ambientSlider->setMinimum(0);
+    ambientSlider->setMaximum(200);
+    ambientSlider->setSliderPosition(ambientCoefficient*200);
+    connect(ambientSlider,SIGNAL(valueChanged(int)),this,SLOT(updateAmbientCoefficient(int)));
+    QLabel* ambientLabel = new QLabel("Ambient Reflection coefficient = ");
+    QLabel* ambientLabelValue = new QLabel();
+    ambientLabelValue->setNum(ambientCoefficient*200);
+    connect(ambientSlider,SIGNAL(valueChanged(int)),ambientLabelValue,SLOT(setNum(int)));
+    QHBoxLayout *hboxAmbient = new QHBoxLayout;
+    hboxAmbient->addWidget(ambientLabel);
+    hboxAmbient->addWidget(ambientLabelValue);
+    outer->addLayout(hboxAmbient);
+    outer->addWidget(ambientSlider);
+
+    QSlider* diffuseSlider = new QSlider(Qt::Horizontal);
+    diffuseSlider->setTickPosition(QSlider::TicksBelow);
+    diffuseSlider->setMinimum(0);
+    diffuseSlider->setMaximum(200);
+    diffuseSlider->setSliderPosition(diffuseCoefficient*200);
+    connect(diffuseSlider,SIGNAL(valueChanged(int)),this,SLOT(updateDiffuseCoefficient(int)));
+    QLabel* diffuseLabel = new QLabel("Diffuse Reflection coefficient = ");
+    QLabel* diffuseLabelValue = new QLabel();
+    diffuseLabelValue->setNum(diffuseCoefficient*200);
+    connect(diffuseSlider,SIGNAL(valueChanged(int)),diffuseLabelValue,SLOT(setNum(int)));
+    QHBoxLayout *hboxDiffuse = new QHBoxLayout;
+    hboxDiffuse->addWidget(diffuseLabel);
+    hboxDiffuse->addWidget(diffuseLabelValue);
+    outer->addLayout(hboxDiffuse);
+    outer->addWidget(diffuseSlider);
+
     // Phong shininess slider
     QSlider* shininessSlider = new QSlider(Qt::Horizontal);
     shininessSlider->setTickPosition(QSlider::TicksBelow);
@@ -291,7 +390,7 @@ QWidget *glShaderWindow::makeAuxWindow()
     etaSlider->setMaximum(500);
     etaSlider->setSliderPosition(eta*100);
     connect(etaSlider,SIGNAL(valueChanged(int)),this,SLOT(updateEta(int)));
-    QLabel* etaLabel = new QLabel("Eta (index of refraction) * 100 =");
+    QLabel* etaLabel = new QLabel("Eta(index of refraction-real) * 100 =");
     QLabel* etaLabelValue = new QLabel();
     etaLabelValue->setNum(eta * 100);
     connect(etaSlider,SIGNAL(valueChanged(int)),etaLabelValue,SLOT(setNum(int)));
@@ -300,6 +399,49 @@ QWidget *glShaderWindow::makeAuxWindow()
     hboxEta->addWidget(etaLabelValue);
     outer->addLayout(hboxEta);
     outer->addWidget(etaSlider);
+
+    // Eta_k slider
+    QSlider* etaKSlider = new QSlider(Qt::Horizontal);
+    etaKSlider->setTickPosition(QSlider::TicksBelow);
+    etaKSlider->setTickInterval(100);
+    etaKSlider->setMinimum(0);
+    etaKSlider->setMaximum(500);
+    etaKSlider->setSliderPosition(eta_k*100);
+    connect(etaKSlider,SIGNAL(valueChanged(int)),this,SLOT(updateEta(int)));
+    QLabel* etaKLabel = new QLabel("Eta(index of refraction-imaginary) * 100 =");
+    QLabel* etaKLabelValue = new QLabel();
+    etaKLabelValue->setNum(eta_k * 100);
+    connect(etaKSlider,SIGNAL(valueChanged(int)),etaKLabelValue,SLOT(setNum(int)));
+    QHBoxLayout *hboxEtaK= new QHBoxLayout;
+    hboxEtaK->addWidget(etaKLabel);
+    hboxEtaK->addWidget(etaKLabelValue);
+    outer->addLayout(hboxEtaK);
+    outer->addWidget(etaKSlider);
+
+    // Use Texture Radio
+    QGroupBox *groupBox3 = new QGroupBox("Use Texture");
+    QRadioButton *radio4 = new QRadioButton("Texture");
+    QRadioButton *radio5 = new QRadioButton("Custom Color");
+    if (useTexture) radio4->setChecked(true);
+    else radio5->setChecked(true);
+    connect(radio4, SIGNAL(clicked()), this, SLOT(useTextureClicked()));
+    connect(radio5, SIGNAL(clicked()), this, SLOT(useColorClicked()));
+
+    QVBoxLayout *vbox3 = new QVBoxLayout;
+    vbox3->addWidget(radio4);
+    vbox3->addWidget(radio5);
+    groupBox3->setLayout(vbox3);
+    buttons->addWidget(groupBox3);
+    outer->addLayout(buttons);
+
+    // Color Picker
+    QPushButton *colorPickerButton = new QPushButton("Change Color");
+    connect(colorPickerButton,SIGNAL(clicked()),this,SLOT(updateColor()));    
+    QLabel* colorPickerLabel = new QLabel("Model Color");
+    QHBoxLayout *hboxColorPicker= new QHBoxLayout;
+    hboxColorPicker->addWidget(colorPickerLabel);
+    outer->addLayout(hboxColorPicker);
+    outer->addWidget(colorPickerButton);
 
     auxWidget->setLayout(outer);
     return auxWidget;
@@ -1044,8 +1186,6 @@ static int nextPower2(int x) {
     return x;
 }
 
-
-
 void glShaderWindow::render()
 {
     QVector3D lightPosition = m_matrix[1] * (m_center + lightDistance * modelMesh->bsphere.r * QVector3D(0.5, 0.5, 1));
@@ -1076,11 +1216,14 @@ void glShaderWindow::render()
         compute_program->setUniformValue("persp_inverse", persp_inverse);
         compute_program->setUniformValue("lightPosition", lightPosition);
         compute_program->setUniformValue("lightIntensity", 1.0f);
-        compute_program->setUniformValue("blinnPhong", blinnPhong);
+        compute_program->setUniformValue("modelChoice", modelChoice);
         compute_program->setUniformValue("transparent", transparent);
         compute_program->setUniformValue("lightIntensity", lightIntensity);
         compute_program->setUniformValue("shininess", shininess);
+        compute_program->setUniformValue("dirLight.ambient", ambientCoefficient);
+        compute_program->setUniformValue("dirLight.diffuse", diffuseCoefficient);
         compute_program->setUniformValue("eta", eta);
+        compute_program->setUniformValue("eta_k", eta_k);
         compute_program->setUniformValue("framebuffer", 2);
         compute_program->setUniformValue("colorTexture", 0);
 		glBindImageTexture(2, computeResult->textureId(), 0, false, 0, GL_WRITE_ONLY, GL_RGBA32F);
@@ -1141,11 +1284,16 @@ void glShaderWindow::render()
     }
     m_program->setUniformValue("lightPosition", lightPosition);
     m_program->setUniformValue("lightIntensity", 1.0f);
-    m_program->setUniformValue("blinnPhong", blinnPhong);
+    m_program->setUniformValue("modelChoice", modelChoice);
     m_program->setUniformValue("transparent", transparent);
     m_program->setUniformValue("lightIntensity", lightIntensity);
     m_program->setUniformValue("shininess", shininess);
+    m_program->setUniformValue("dirLight.ambient", ambientCoefficient);
+    m_program->setUniformValue("dirLight.diffuse", diffuseCoefficient);
     m_program->setUniformValue("eta", eta);
+    m_program->setUniformValue("eta_k", eta_k);
+    m_program->setUniformValue("useTexture", useTexture);
+    m_program->setUniformValue("modelColor", modelColor);
     m_program->setUniformValue("radius", modelMesh->bsphere.r);
 	if (m_program->uniformLocation("colorTexture") != -1) m_program->setUniformValue("colorTexture", 0);
     if (m_program->uniformLocation("envMap") != -1)  m_program->setUniformValue("envMap", 1);
@@ -1170,11 +1318,14 @@ void glShaderWindow::render()
         ground_program->setUniformValue("perspective", m_perspective);
         ground_program->setUniformValue("normalMatrix", m_matrix[0].normalMatrix());
         ground_program->setUniformValue("lightIntensity", 1.0f);
-        ground_program->setUniformValue("blinnPhong", blinnPhong);
+        ground_program->setUniformValue("modelChoice", modelChoice);
         ground_program->setUniformValue("transparent", transparent);
         ground_program->setUniformValue("lightIntensity", lightIntensity);
         ground_program->setUniformValue("shininess", shininess);
+        ground_program->setUniformValue("dirLight.ambient", ambientCoefficient);
+        ground_program->setUniformValue("dirLight.diffuse", diffuseCoefficient);
         ground_program->setUniformValue("eta", eta);
+        ground_program->setUniformValue("eta_k", eta_k);
         ground_program->setUniformValue("radius", modelMesh->bsphere.r);
 		if (ground_program->uniformLocation("colorTexture") != -1) ground_program->setUniformValue("colorTexture", 0);
         if (ground_program->uniformLocation("shadowMap") != -1) {

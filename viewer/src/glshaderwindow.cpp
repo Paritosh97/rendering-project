@@ -8,7 +8,9 @@
 // Buttons/sliders for User interface:
 #include <QGroupBox>
 #include <QRadioButton>
+#include <QPushButton>
 #include <QSlider>
+#include <QColorDialog>
 #include <QLabel>
 // Layouts for User interface
 #include <QVBoxLayout>
@@ -25,7 +27,7 @@ glShaderWindow::glShaderWindow(QWindow *parent)
       m_program(0), ground_program(0), compute_program(0), shadowMapGenerationProgram(0),
       g_vertices(0), g_normals(0), g_texcoords(0), g_colors(0), g_indices(0),
       gpgpu_vertices(0), gpgpu_normals(0), gpgpu_texcoords(0), gpgpu_colors(0), gpgpu_indices(0),
-      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), blinnPhong(true), transparent(true), eta(1.5), eta_k(1.5), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
+      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), blinnPhong(true), transparent(true), eta(1.5), eta_k(1.5), useTexture(true), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
 {
     // Default values you might want to tinker with
     shadowMapDimension = 2048;
@@ -227,6 +229,35 @@ void glShaderWindow::updateEtaK(int etaKSliderValue)
     renderNow();
 }
 
+void glShaderWindow::useTextureClicked()
+{
+    useTexture = true;
+    renderNow();
+}
+
+void glShaderWindow::useColorClicked()
+{
+    useTexture = false;
+    renderNow();
+}
+
+
+void glShaderWindow::changeColor(QColor newColor)
+{
+    modelColor.setX((float)newColor.red()/255.0f);
+    modelColor.setY((float)newColor.green()/255.0f);
+    modelColor.setZ((float)newColor.blue()/255.0f);
+    modelColor.setW((float)newColor.alpha()/255.0f);
+    renderNow();
+}
+
+void glShaderWindow::updateColor()
+{
+    QColorDialog *colorDialog = new QColorDialog(Qt::Horizontal);
+    colorDialog->show();
+    connect(colorDialog,SIGNAL(currentColorChanged(QColor)),this,SLOT(changeColor(QColor)));    
+}
+
 QWidget *glShaderWindow::makeAuxWindow()
 {
     if (auxWidget)
@@ -366,6 +397,31 @@ QWidget *glShaderWindow::makeAuxWindow()
     hboxEtaK->addWidget(etaKLabelValue);
     outer->addLayout(hboxEtaK);
     outer->addWidget(etaKSlider);
+
+    // Use Texture Radio
+    QGroupBox *groupBox3 = new QGroupBox("Use Texture");
+    QRadioButton *radio3 = new QRadioButton("Texture");
+    QRadioButton *radio4 = new QRadioButton("Custom Color");
+    if (useTexture) radio3->setChecked(true);
+    else radio4->setChecked(true);
+    connect(radio3, SIGNAL(clicked()), this, SLOT(useTextureClicked()));
+    connect(radio4, SIGNAL(clicked()), this, SLOT(useColorClicked()));
+
+    QVBoxLayout *vbox3 = new QVBoxLayout;
+    vbox3->addWidget(radio3);
+    vbox3->addWidget(radio4);
+    groupBox3->setLayout(vbox3);
+    buttons->addWidget(groupBox3);
+    outer->addLayout(buttons);
+
+    // Color Picker
+    QPushButton *colorPickerButton = new QPushButton("Change Color");
+    connect(colorPickerButton,SIGNAL(clicked()),this,SLOT(updateColor()));    
+    QLabel* colorPickerLabel = new QLabel("Model Color");
+    QHBoxLayout *hboxColorPicker= new QHBoxLayout;
+    hboxColorPicker->addWidget(colorPickerLabel);
+    outer->addLayout(hboxColorPicker);
+    outer->addWidget(colorPickerButton);
 
     auxWidget->setLayout(outer);
     return auxWidget;
@@ -1216,6 +1272,8 @@ void glShaderWindow::render()
     m_program->setUniformValue("dirLight.diffuse", diffuseCoefficient);
     m_program->setUniformValue("eta", eta);
     m_program->setUniformValue("eta_k", eta_k);
+    m_program->setUniformValue("useTexture", useTexture);
+    m_program->setUniformValue("modelColor", modelColor);
     m_program->setUniformValue("radius", modelMesh->bsphere.r);
 	if (m_program->uniformLocation("colorTexture") != -1) m_program->setUniformValue("colorTexture", 0);
     if (m_program->uniformLocation("envMap") != -1)  m_program->setUniformValue("envMap", 1);

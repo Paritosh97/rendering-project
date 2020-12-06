@@ -51,6 +51,10 @@ public slots:
     void updateDiffuseCoefficient(int diffuseSliderValue);
     void updateEta(int etaSliderValue);
     void updateEtaK(int etaKSliderValue);
+    void useTextureClicked();
+    void useColorClicked();
+    void updateColor();
+    void changeColor(QColor newColor);
 
 protected:
     void mousePressEvent(QMouseEvent *e);
@@ -106,6 +110,8 @@ private:
     bool transparent;
     float eta;
     float eta_k;
+    bool useTexture;
+    QVector4D modelColor;
     float lightIntensity;
     float shininess;
     float ambientCoefficient;

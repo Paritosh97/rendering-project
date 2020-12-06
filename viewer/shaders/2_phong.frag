@@ -11,10 +11,12 @@ uniform DirLight dirLight;
 
 uniform float lightIntensity;
 uniform bool blinnPhong;
+uniform bool useTexture;
 uniform float shininess;
 uniform float eta;
 uniform float eta_k;
 uniform sampler2D shadowMap;
+uniform vec4 modelColor;
 
 in vec4 eyeVector;
 in vec4 lightVector;
@@ -50,14 +52,14 @@ float CalculateG(float cos_t, float sin_t)
     return 2/(1+sqrt(1+(shininess*shininess*tan_t*tan_t)));
 }
 
-vec4 CalcBlinnPhongSpecular(float F, vec4 normal, vec4 halfwayDir)
+float CalcBlinnPhongSpecular(float F, vec4 normal, vec4 halfwayDir)
 {    
     float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
 
-    return (F * spec * vertColor);
+    return (F * spec);
 }
 
-vec4 CalcCookTorranceSpecular(float F, vec4 normal, vec4 halfwayDir)
+float CalcCookTorranceSpecular(float F, vec4 normal, vec4 halfwayDir)
 {
     float cos_ti = dot(normal, lightVector);
     float sin_ti = length(cross(normal.xyz, lightVector.xyz));
@@ -71,27 +73,45 @@ vec4 CalcCookTorranceSpecular(float F, vec4 normal, vec4 halfwayDir)
     float num = F * D * G1_ti * G1_td;
     float denom = 4 * cos_ti * cos_to;
 
-    return (vertColor * num/denom);
+    return num/denom;
 }
 
 void main( void )
 {   
-    // ambient shading
-    vec4 ambient  = dirLight.ambient  * vertColor;
+    vec4 ambient, diffuse, specular;
 
-    // diffuse shading
-    float diff = max(dot(vertNormal, lightVector), 0.0);
-    vec4 diffuse  = dirLight.diffuse  * diff * vertColor;
-
-    // specular shading
-    vec4 specular;
     vec4 halfwayDir = normalize(eyeVector + lightVector);
     float cos_td = dot(halfwayDir.xyz, lightVector.xyz);
     float F = CalculateFresnel(cos_td);
-    if(blinnPhong)
-        specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir);
+
+    float diff = max(dot(vertNormal, lightVector), 0.0);
+
+    if(useTexture)
+    {
+        // ambient shading
+        ambient  = dirLight.ambient  * vertColor;
+
+        // diffuse shading
+        diffuse  = dirLight.diffuse  * diff * vertColor;
+
+        if(blinnPhong)
+            specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir) * vertColor;
+        else
+            specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir) * vertColor;
+    }
     else
-        specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir);
+    {
+        // ambient shading
+        ambient  = dirLight.ambient  * modelColor;
+
+        // diffuse shading
+        diffuse  = dirLight.diffuse  * diff * modelColor;
+
+        if(blinnPhong)
+            specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir) * modelColor;
+        else
+            specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir) * modelColor;
+    }    
 
     // combine results
     fragColor = ambient + diffuse + specular;

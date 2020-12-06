@@ -241,7 +241,6 @@ void glShaderWindow::useColorClicked()
     renderNow();
 }
 
-
 void glShaderWindow::changeColor(QColor newColor)
 {
     modelColor.setX((float)newColor.red()/255.0f);
@@ -253,7 +252,7 @@ void glShaderWindow::changeColor(QColor newColor)
 
 void glShaderWindow::updateColor()
 {
-    QColorDialog *colorDialog = new QColorDialog(Qt::Horizontal);
+    QColorDialog *colorDialog = new QColorDialog(QColor(modelColor.x()*255, modelColor.y()*255, modelColor.z()*255, modelColor.w()*255));
     colorDialog->show();
     connect(colorDialog,SIGNAL(currentColorChanged(QColor)),this,SLOT(changeColor(QColor)));    
 }

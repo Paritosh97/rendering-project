@@ -111,7 +111,7 @@ void main( void )
             specular = lightIntensity * CalcBlinnPhongSpecular(F, vertNormal, halfwayDir) * modelColor;
         else
             specular = lightIntensity * CalcCookTorranceSpecular(F, vertNormal, halfwayDir) * modelColor;
-    }    
+    }
 
     // combine results
     fragColor = ambient + diffuse + specular;

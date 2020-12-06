@@ -27,7 +27,7 @@ glShaderWindow::glShaderWindow(QWindow *parent)
       m_program(0), ground_program(0), compute_program(0), shadowMapGenerationProgram(0),
       g_vertices(0), g_normals(0), g_texcoords(0), g_colors(0), g_indices(0),
       gpgpu_vertices(0), gpgpu_normals(0), gpgpu_texcoords(0), gpgpu_colors(0), gpgpu_indices(0),
-      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), blinnPhong(true), transparent(true), eta(1.5), eta_k(1.5), useTexture(true), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
+      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), modelChoice(0), transparent(true), eta(1.5), eta_k(1.5), useTexture(true), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
 {
     // Default values you might want to tinker with
     shadowMapDimension = 2048;
@@ -169,15 +169,21 @@ void glShaderWindow::openNewEnvMap() {
     }
 }
 
-void glShaderWindow::cookTorranceClicked()
+void glShaderWindow::blinnPhongClicked()
 {
-    blinnPhong = false;
+    modelChoice = 0;
     renderNow();
 }
 
-void glShaderWindow::blinnPhongClicked()
+void glShaderWindow::cookTorranceClicked()
 {
-    blinnPhong = true;
+    modelChoice = 1;
+    renderNow();
+}
+
+void glShaderWindow::metallicFresnelClicked()
+{
+    modelChoice = 2;
     renderNow();
 }
 
@@ -269,14 +275,29 @@ QWidget *glShaderWindow::makeAuxWindow()
     QGroupBox *groupBox = new QGroupBox("Specular Model selection");
     QRadioButton *radio1 = new QRadioButton("Blinn-Phong");
     QRadioButton *radio2 = new QRadioButton("Cook-Torrance");
-    if (blinnPhong) radio1->setChecked(true);
-    else radio1->setChecked(true);
+    QRadioButton *radio3 = new QRadioButton("Artist Friendly Metallic Fresnel");
+    switch(modelChoice)
+    {
+        case 0 :
+            radio1->setChecked(true);
+            break;
+
+        case 1 :
+            radio2->setChecked(true);
+            break;
+
+        case 2 :
+            radio3->setChecked(true);
+            break;
+    }
     connect(radio1, SIGNAL(clicked()), this, SLOT(blinnPhongClicked()));
     connect(radio2, SIGNAL(clicked()), this, SLOT(cookTorranceClicked()));
+    connect(radio3, SIGNAL(clicked()), this, SLOT(metallicFresnelClicked()));
 
     QVBoxLayout *vbox1 = new QVBoxLayout;
     vbox1->addWidget(radio1);
     vbox1->addWidget(radio2);
+    vbox1->addWidget(radio3);
     groupBox->setLayout(vbox1);
     buttons->addWidget(groupBox);
 
@@ -399,16 +420,16 @@ QWidget *glShaderWindow::makeAuxWindow()
 
     // Use Texture Radio
     QGroupBox *groupBox3 = new QGroupBox("Use Texture");
-    QRadioButton *radio3 = new QRadioButton("Texture");
-    QRadioButton *radio4 = new QRadioButton("Custom Color");
-    if (useTexture) radio3->setChecked(true);
-    else radio4->setChecked(true);
-    connect(radio3, SIGNAL(clicked()), this, SLOT(useTextureClicked()));
-    connect(radio4, SIGNAL(clicked()), this, SLOT(useColorClicked()));
+    QRadioButton *radio4 = new QRadioButton("Texture");
+    QRadioButton *radio5 = new QRadioButton("Custom Color");
+    if (useTexture) radio4->setChecked(true);
+    else radio5->setChecked(true);
+    connect(radio4, SIGNAL(clicked()), this, SLOT(useTextureClicked()));
+    connect(radio5, SIGNAL(clicked()), this, SLOT(useColorClicked()));
 
     QVBoxLayout *vbox3 = new QVBoxLayout;
-    vbox3->addWidget(radio3);
     vbox3->addWidget(radio4);
+    vbox3->addWidget(radio5);
     groupBox3->setLayout(vbox3);
     buttons->addWidget(groupBox3);
     outer->addLayout(buttons);
@@ -1195,7 +1216,7 @@ void glShaderWindow::render()
         compute_program->setUniformValue("persp_inverse", persp_inverse);
         compute_program->setUniformValue("lightPosition", lightPosition);
         compute_program->setUniformValue("lightIntensity", 1.0f);
-        compute_program->setUniformValue("blinnPhong", blinnPhong);
+        compute_program->setUniformValue("modelChoice", modelChoice);
         compute_program->setUniformValue("transparent", transparent);
         compute_program->setUniformValue("lightIntensity", lightIntensity);
         compute_program->setUniformValue("shininess", shininess);
@@ -1263,7 +1284,7 @@ void glShaderWindow::render()
     }
     m_program->setUniformValue("lightPosition", lightPosition);
     m_program->setUniformValue("lightIntensity", 1.0f);
-    m_program->setUniformValue("blinnPhong", blinnPhong);
+    m_program->setUniformValue("modelChoice", modelChoice);
     m_program->setUniformValue("transparent", transparent);
     m_program->setUniformValue("lightIntensity", lightIntensity);
     m_program->setUniformValue("shininess", shininess);
@@ -1297,7 +1318,7 @@ void glShaderWindow::render()
         ground_program->setUniformValue("perspective", m_perspective);
         ground_program->setUniformValue("normalMatrix", m_matrix[0].normalMatrix());
         ground_program->setUniformValue("lightIntensity", 1.0f);
-        ground_program->setUniformValue("blinnPhong", blinnPhong);
+        ground_program->setUniformValue("modelChoice", modelChoice);
         ground_program->setUniformValue("transparent", transparent);
         ground_program->setUniformValue("lightIntensity", lightIntensity);
         ground_program->setUniformValue("shininess", shininess);

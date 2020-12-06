@@ -43,6 +43,7 @@ public slots:
     void setShader(const QString& size);
     void cookTorranceClicked();
     void blinnPhongClicked();
+    void metallicFresnelClicked();
     void transparentClicked();
     void opaqueClicked();
     void updateLightIntensity(int lightSliderValue);
@@ -106,7 +107,7 @@ private:
     // ComputeShader:
     GLuint ssbo[4];
     // Parameters controlled by UI
-    bool blinnPhong;
+    int modelChoice;
     bool transparent;
     float eta;
     float eta_k;

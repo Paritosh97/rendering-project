@@ -3,6 +3,10 @@ Rendering project for Computer Graphics 2
 
 # What's Implemented
 
-## TP2
-- Ray Tracing Glass Sphere
-- Ray Tracing Multiple Spheres
+## TP3
+- Ray-bounding box intersection
+- Ray-triangle mesh intersection
+- Shadow rays
+- Ground
+- Fresnel calculation using different lighting models
+- Custom Color

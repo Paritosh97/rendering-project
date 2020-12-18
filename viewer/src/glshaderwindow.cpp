@@ -1252,6 +1252,9 @@ void glShaderWindow::render()
         compute_program->setUniformValue("dirLight.diffuse", diffuseCoefficient);
         compute_program->setUniformValue("eta", eta);
         compute_program->setUniformValue("eta_k", eta_k);
+        compute_program->setUniformValue("useTexture", useTexture);
+        compute_program->setUniformValue("modelColor", modelColor);
+        compute_program->setUniformValue("modelChoice", modelChoice);
         compute_program->setUniformValue("framebuffer", 2);
         compute_program->setUniformValue("colorTexture", 0);
 		glBindImageTexture(2, computeResult->textureId(), 0, false, 0, GL_WRITE_ONLY, GL_RGBA32F);

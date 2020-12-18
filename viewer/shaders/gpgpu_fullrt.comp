@@ -9,19 +9,45 @@ uniform float lightIntensity;
 uniform vec3 lightPosition;
 uniform float shininess;
 uniform float eta;
+uniform float eta_k;
 uniform vec3 bbmin;
 uniform vec3 bbmax;
 uniform float radius;
 uniform float groundDistance;
 uniform vec3 center;
+uniform vec4 modelColor;
+uniform int modelChoice;
+uniform bool useTexture;
 
+#define M_PI 3.14159265358979323846
 #define MAX_SCENE_BOUNDS    10.0
 #define EPS                 0.000001
+#define HIT_GROUND          0
+#define HIT_OBJECT          1
+#define HIT_SCENE           2
 
+struct DirLight
+{   
+    float ambient;
+    float diffuse;
+};
+uniform DirLight dirLight;
 
 struct hitinfo_t {
     vec4 t;
     int hit_vptr;
+};
+
+
+struct Ray{
+    vec4 origin;
+    vec4 direction;
+    vec4 hit_point;
+    vec4 color;
+    vec4 normal;
+    float fresnel;
+    hitinfo_t h;
+    int hit_type; // 0 : ground, 1 : object, 2 : outside
 };
 
 layout (std430, binding = 1) buffer Vertices
@@ -44,51 +70,394 @@ layout (std430, binding = 4) buffer Meshes
     int indices[];
 };
 
-bool intersectBoundingBox(vec4 origin, vec4 dir) {
-	// TODO
+float CalculateFresnel(float cos_td)
+{
+    float f_s = (pow(eta, 2) + pow(eta_k, 2) - (2*eta_k*cos_td) + pow(cos_td, 2)) / (pow(eta, 2) + pow(eta_k, 2) + (2*eta_k*cos_td) + pow(cos_td, 2));
+    float f_p = ((pow(eta, 2) + pow(eta_k, 2))*pow(cos_td, 2) - (2*eta_k*cos_td) + 1) / ((pow(eta, 2) + pow(eta_k, 2))*pow(cos_td, 2) + (2*eta_k*cos_td) + 1);
+    
+    return (f_s + f_p)/2;
+}
+
+float CalcBlinnPhongSpecular(float F, vec3 vertNormal, vec3 halfwayDir)
+{    
+    float spec = pow(max(dot(vertNormal, halfwayDir), 0.0), shininess);
+
+    return (F * spec);
+}
+
+float n_min(float r)
+{
+    return (1-r)/(1+r);
+}
+
+float n_max(float r)
+{
+    return (1+sqrt(r))/(1-sqrt(r)); 
+}
+
+float get_n(float r,float g)
+{
+    return n_min(r)*g + (1-g)*n_max(r);
+}
+
+float get_k2(float r, float n)
+{
+    float nr = (n+1)*(n+1)*r-(n-1)*(n-1);
+    return nr/(1-r);
+}
+
+float get_r(float n, float k)
+{
+    return ((n-1)*(n-1)+k*k)/((n+1)*(n+1)+k*k);
+}
+
+float get_g(float n, float k)
+{
+    float r = get_r(n,k);
+    return (n_max(r)-n)/(n_max(r)-n_min(r));
+}
+
+float CalcMetallicFresnel(float theta)
+{
+    //clamp parameters
+    float _r = clamp(eta,0.0,0.99);
+    //compute n and k
+    float n = get_n(_r,eta_k);
+    float k2 = get_k2(_r,n);
+
+    float c = cos(theta);
+    float rs_num = n*n + k2 - 2*n*c + c*c;
+    float rs_den = n*n + k2 + 2*n*c + c*c;
+    float rs = rs_num/rs_den;
+    
+    float rp_num = (n*n + k2)*c*c - 2*n*c + 1;
+    float rp_den = (n*n + k2)*c*c + 2*n*c + 1;
+    float rp = rp_num/rp_den;
+
+    return 0.5*(rs+rp);
+}
+
+float chiGGX(float v)
+{
+    return v>0 ? 1.0:0.0;
+}
+
+/*
+ * Microfacet normal distribution
+ */
+float D(float alpha, float cos_theta)
+{
+    float alpha2 = alpha * alpha;
+    float cos2 = cos_theta * cos_theta;
+    return (chiGGX(cos_theta) * alpha2) / (M_PI * pow(cos2 * alpha2 + (1 - cos2), 2));
+}
+
+/*
+ * Geometric shadowing
+ */
+float G1(float alpha, float cos_theta)
+{
+    float cos2 = cos_theta*cos_theta;
+    return 2 / (1 + sqrt(1 + alpha*alpha + (1 - cos2)/cos2));
+}
+
+float DistributionGGX(vec3 N, vec3 H)
+{
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+	
+    float nom    = shininess*shininess;
+    float denom  = (NdotH2 * (shininess*shininess - 1.0) + 1.0);
+    denom        = M_PI * denom * denom;
+	
+    return nom / denom;
+}
+
+float CalculateG(float cos_t, float sin_t)
+{
+    float tan_t = sin_t/cos_t;
+    return 2/(1+sqrt(1+(shininess*shininess*tan_t*tan_t)));
+}
+
+float CalcCookTorranceSpecular(float F, vec3 vertNormal, vec3 lightVector,  vec3 halfwayDir, vec3 eyeVector)
+{
+    float cos_ti = dot(vertNormal, lightVector);
+    float sin_ti = length(cross(vertNormal, lightVector));
+    float cos_to = dot(vertNormal, eyeVector);
+    float sin_to = length(cross(vertNormal, eyeVector));
+    
+    float D = DistributionGGX(vertNormal, halfwayDir);    
+    float G1_ti = CalculateG(cos_ti, sin_ti);
+    float G1_td = CalculateG(cos_to, sin_to);
+
+    float num = F * D * G1_ti * G1_td;
+    float denom = 4 * cos_ti * cos_to;
+
+    return num/denom;
+}
+
+bool intersectBoundingBox(vec4 origin, vec4 dir)
+{
+    vec3 tMin = (bbmin - origin.xyz) / dir.xyz;
+    vec3 tMax = (bbmax - origin.xyz) / dir.xyz;
+    vec3 t1 = min(tMin, tMax);
+    vec3 t2 = max(tMin, tMax);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
+    if(tNear < tFar)
+    {
+        return true;
+    };
     return false;
 }
 
 bool intersectTriangle(vec4 origin, vec4 dir, int ptr, out vec4 dist) 
 {
-	// TODO
-    return false;
+	vec4 v0 = vertices[indices[ptr]];
+    vec4 v1 = vertices[indices[ptr + 1]];
+    vec4 v2 = vertices[indices[ptr + 2]];
+    vec3 e1 = v1.xyz - v0.xyz;
+    vec3 e2 = v2.xyz - v0.xyz;
+    vec3 t = origin.xyz - v0.xyz;
+    vec3 p = cross(dir.xyz, e2);
+    float det = dot(p, e1);
+    if (det <= 0 || abs(det) < EPS)
+    {
+        return false;
+    }
+    float invDet = 1 / det;
+
+    float alpha = dot(t,p) * invDet;
+    if(alpha < 0 || alpha > 1)
+    {
+        return false;
+    }
+    vec3 q = cross(t, e1);
+    float beta = dot(dir.xyz, q) * invDet;
+    if(beta < 0 || beta + alpha > 1)
+    {
+        return false;
+    }
+    float lambda = dot(e2, q) * invDet;
+
+    // Intersection with self
+    if (lambda < EPS)
+    {
+        return false;
+    }
+
+    dist = vec4(lambda, alpha, beta, 1 - alpha - beta);
+
+    return true;
 }
 
 vec4 interpolateNormal(hitinfo_t h)
 {
-	// TODO
-    return vec4(1);
-}
+	vec4 n0 = normals[indices[h.hit_vptr]];
+    vec4 n1 = normals[indices[h.hit_vptr + 1]];
+    vec4 n2 = normals[indices[h.hit_vptr + 2]];
 
-vec4 interpolateColor(hitinfo_t h)
-{
-	// TODO
-	return vec4(1);
+    return h.t.w*n0 + h.t.y*n1 + h.t.z*n2;
 }
 
 bool isIntersected(vec4 origin, vec4 dir, out hitinfo_t h)
 {
-    vec4 dist; // stores distance + barycentric coord
+    vec4 dist;
 	bool hit = false;
 	h.t.x = radius * MAX_SCENE_BOUNDS;
 	if(intersectBoundingBox(origin, dir)) {
-		for(int j = 0; j < indices.length(); j += 3) {
-			if(intersectTriangle(origin, dir, j, dist)) {
-				// TODO
+		for(int j = 0; j < indices.length(); j += 3)
+        {
+			if(intersectTriangle(origin, dir, j, dist))
+            {
+				if (dist.x < h.t.x)
+                {
+                    h.hit_vptr = j;
+                    h.t = dist;
+                    hit = true;
+                }
 			}
 		}
 	}
 	return hit;
 }
 
-const int MAX_TRACE = 1;
+bool isIntersectedGround(vec4 origin, vec4 dir, out float t)
+{
+    vec4 n = vec4(0.0, -1.0, 0.0, 1.0);
+    float uDotn = dot(dir, n);
 
+    if (uDotn <= 0.0)
+    {
+        return false;
+    }
+    t = (groundDistance - dot(origin, n)) / uDotn;
+
+    return t > 0.0;
+}
+
+vec4 GetColor(vec4 origin, vec4 inputColor, vec4 vertNormal, vec4 lightVector, vec4 halfwayDir, vec4 eyeVector)
+{
+    hitinfo_t next_h;
+    vec4 ambient = dirLight.ambient * lightIntensity * inputColor;
+    if(isIntersected(origin, lightVector, next_h))
+    {
+        return ambient;
+    }
+    else
+    {
+        float cos_ti = dot(vertNormal, lightVector);
+        float cos_td = dot(halfwayDir, lightVector);
+        float F = CalculateFresnel(cos_td);
+        vec4 diffuse = dirLight.diffuse * max(cos_ti, 0) * inputColor * lightIntensity;
+        vec4 specular;
+        switch(modelChoice)
+        {
+            case 0:
+                specular = CalcBlinnPhongSpecular(F, vertNormal.xyz, halfwayDir.xyz) * lightIntensity * inputColor;
+                break;
+            case 1:
+                specular = CalcCookTorranceSpecular(F, vertNormal.xyz, lightVector.xyz, halfwayDir.xyz, eyeVector.xyz) * lightIntensity * inputColor;
+                break;
+            case 2:
+                float F = CalcMetallicFresnel(cos_td);
+                specular = CalcCookTorranceSpecular(F, vertNormal.xyz, lightVector.xyz, halfwayDir.xyz, eyeVector.xyz) * lightIntensity * inputColor;
+                break;
+        }
+        return ambient + diffuse + specular;
+    }
+}
+
+vec4 interpolateColor(hitinfo_t h)
+{
+    vec4 v0 = vertices[indices[h.hit_vptr]];
+    vec4 v1 = vertices[indices[h.hit_vptr + 1]];
+    vec4 v2 = vertices[indices[h.hit_vptr + 2]];
+    vec4 intersection = h.t.w*v0 + h.t.y*v1 + h.t.z*v2;
+
+    vec4 c0 = colors[indices[h.hit_vptr]];
+    vec4 c1 = colors[indices[h.hit_vptr + 1]];
+    vec4 c2 = colors[indices[h.hit_vptr + 2]];
+    vec4 vertColor;
+    if(useTexture)
+        vertColor = h.t.w*c0 + h.t.y*c1 + h.t.z*c2;
+    else
+        vertColor = modelColor;
+
+    vec4 lightVector = normalize(vec4(lightPosition, 1.0) - intersection);
+    vec4 eyeVector = normalize(vec4(0, 0, 0, 1) - intersection);
+    vec4 halfVector = normalize(lightVector + eyeVector);
+    vec4 vertNormal = interpolateNormal(h);
+
+    return GetColor(intersection, vertColor, vertNormal, lightVector, halfVector, eyeVector);
+}
+
+vec4 interpolateGroundColor(vec4 intersection)
+{
+    if (sqrt(intersection.x * intersection.x + intersection.z * intersection.z) > radius*10)
+    {
+        return vec4(0.299, 0.299, 0.299, 1.0); // background color
+    }
+
+    float max_coords = MAX_SCENE_BOUNDS * 20; // TODO replace by radius * MAX_SCENE_BOUNDS copy from isIntersected
+    vec2 textCoords = vec2(intersection.x / max_coords, intersection.z / max_coords);
+    vec4 groundColor = texture(colorTexture,textCoords);
+
+    vec4 lightVector = normalize(vec4(lightPosition, 1.0) - intersection);
+    vec4 eyeVector = normalize(vec4(0, 0, 0, 1) - intersection);
+    vec4 halfVector = normalize(lightVector + eyeVector);
+    vec4 groundNormal = vec4(1.0, 0.0, 0.0, 1.0);
+
+    return GetColor(intersection, groundColor, groundNormal, lightVector, halfVector, eyeVector);
+}
+
+const int MAX_TRACE = 1;
 
 vec4 trace(vec4 origin, vec4 dir)
 {
-	// TODO: trace a ray in the scene, see what it intersects, bounce around
-    return vec4(1);
+    hitinfo_t h;
+    float t;
+    vec4 OutputColor;
+    vec4 gray = vec4(0.299, 0.299, 0.299, 1.0);
+    vec4 red = vec4(1.0,0.0,0.0,1.0);
+    
+    Ray rays[MAX_TRACE];
+    int index_last_ray = 0;
+    vec4 incident_ray = dir;
+    vec4 start = origin;
+
+    for(int i = 0; i < MAX_TRACE; i ++)
+    {
+        rays[i].origin = start;
+        rays[i].direction = incident_ray;
+        if (isIntersected(start, incident_ray, h))
+        {
+            rays[i].hit_point = rays[i].origin + h.t.x * rays[i].direction;
+            rays[i].h = h;
+            rays[i].hit_type = HIT_OBJECT;
+            rays[i].normal = interpolateNormal(h);
+        }
+        else if(isIntersectedGround(start, incident_ray, t))
+        {
+            rays[i].hit_point = rays[i].origin + t * rays[i].direction;
+            rays[i].hit_type = HIT_GROUND;
+            rays[i].normal = vec4(0.0, -1.0, 0.0, 1.0); //???
+        }
+        else
+        {
+            if(i == 0)
+            {
+                return gray;
+            }
+            rays[i].hit_type = HIT_SCENE;
+            index_last_ray = i;
+            break;
+        }
+        vec4 reflected_ray = normalize(reflect(incident_ray, rays[i].normal));
+        vec4 halfVector = normalize((-rays[i].direction) + reflected_ray);
+        if(i != 0)
+        {
+            rays[i].fresnel = CalcMetallicFresnel(dot((-rays[i].direction.xyz), halfVector.xyz)) * rays[i-1].fresnel;
+        }
+        else
+        {
+            rays[i].fresnel = CalcMetallicFresnel(dot((-rays[i].direction.xyz), halfVector.xyz));
+        }
+        start = rays[i].hit_point;
+        incident_ray = reflected_ray;
+        index_last_ray = i;
+    }
+
+    for(int i = index_last_ray; i >= 0; i --)
+    {
+        if (rays[i].hit_type == HIT_OBJECT)
+        {
+            if(i == index_last_ray)
+            {
+                rays[i].color = interpolateColor(h);
+            }
+            else
+            {
+                rays[i].color = interpolateColor(h) + rays[i+1].color * rays[i].fresnel;
+            }
+        }
+        else if(rays[i].hit_type == HIT_GROUND)
+        {
+            if(i == index_last_ray)
+            {
+                rays[i].color = interpolateGroundColor(rays[i].hit_point);
+            }
+            else
+            {
+                rays[i].color = interpolateGroundColor(rays[i].hit_point) + rays[i+1].color * rays[i].fresnel;
+            }
+        }
+        else
+        {
+            rays[i].color = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+    }
+    return rays[0].color;
 }
 
 layout (local_size_x = 8, local_size_y = 8) in;

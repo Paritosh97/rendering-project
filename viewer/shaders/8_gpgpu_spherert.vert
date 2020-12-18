@@ -1,4 +1,4 @@
-#version 410
+#version 430
 
 // Standard parameters of a VAO
 in vec4 vertex;

@@ -56,6 +56,9 @@ public slots:
     void useColorClicked();
     void updateColor();
     void changeColor(QColor newColor);
+    void useMultipleSpheresClicked();
+    void useSingleSphereClicked();
+
 
 protected:
     void mousePressEvent(QMouseEvent *e);
@@ -113,6 +116,7 @@ private:
     float eta_k;
     bool useTexture;
     QVector4D modelColor;
+    bool useMultipleSpheres;
     float lightIntensity;
     float shininess;
     float ambientCoefficient;

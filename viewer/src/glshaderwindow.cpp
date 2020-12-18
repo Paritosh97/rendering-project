@@ -27,7 +27,7 @@ glShaderWindow::glShaderWindow(QWindow *parent)
       m_program(0), ground_program(0), compute_program(0), shadowMapGenerationProgram(0),
       g_vertices(0), g_normals(0), g_texcoords(0), g_colors(0), g_indices(0),
       gpgpu_vertices(0), gpgpu_normals(0), gpgpu_texcoords(0), gpgpu_colors(0), gpgpu_indices(0),
-      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), modelChoice(0), transparent(true), eta(1.5), eta_k(1.5), useTexture(true), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
+      environmentMap(0), texture(0), permTexture(0), pixels(0), mouseButton(Qt::NoButton), auxWidget(0), isGPGPU(false), hasComputeShaders(false), modelChoice(0), transparent(true), eta(1.0), eta_k(0.5), useTexture(true), useMultipleSpheres(false), lightIntensity(1.0f), shininess(50.0f), ambientCoefficient(.5f), diffuseCoefficient(.5f), lightDistance(5.0f), groundDistance(0.78), shadowMap_fboId(0), shadowMap_rboId(0), shadowMap_textureId(0), fullScreenSnapshots(false), computeResult(0), m_indexBuffer(QOpenGLBuffer::IndexBuffer), ground_indexBuffer(QOpenGLBuffer::IndexBuffer)
 {
     // Default values you might want to tinker with
     shadowMapDimension = 2048;
@@ -263,6 +263,19 @@ void glShaderWindow::updateColor()
     connect(colorDialog,SIGNAL(currentColorChanged(QColor)),this,SLOT(changeColor(QColor)));    
 }
 
+void glShaderWindow::useMultipleSpheresClicked()
+{
+    useMultipleSpheres = true;
+    renderNow();
+}
+
+void glShaderWindow::useSingleSphereClicked()
+{
+    useMultipleSpheres = false;
+    renderNow();
+}
+
+
 QWidget *glShaderWindow::makeAuxWindow()
 {
     if (auxWidget)
@@ -387,7 +400,7 @@ QWidget *glShaderWindow::makeAuxWindow()
     etaSlider->setTickPosition(QSlider::TicksBelow);
     etaSlider->setTickInterval(100);
     etaSlider->setMinimum(0);
-    etaSlider->setMaximum(500);
+    etaSlider->setMaximum(100);
     etaSlider->setSliderPosition(eta*100);
     connect(etaSlider,SIGNAL(valueChanged(int)),this,SLOT(updateEta(int)));
     QLabel* etaLabel = new QLabel("Eta(index of refraction-real) * 100 =");
@@ -405,7 +418,7 @@ QWidget *glShaderWindow::makeAuxWindow()
     etaKSlider->setTickPosition(QSlider::TicksBelow);
     etaKSlider->setTickInterval(100);
     etaKSlider->setMinimum(0);
-    etaKSlider->setMaximum(500);
+    etaKSlider->setMaximum(100);
     etaKSlider->setSliderPosition(eta_k*100);
     connect(etaKSlider,SIGNAL(valueChanged(int)),this,SLOT(updateEta(int)));
     QLabel* etaKLabel = new QLabel("Eta(index of refraction-imaginary) * 100 =");
@@ -432,7 +445,6 @@ QWidget *glShaderWindow::makeAuxWindow()
     vbox3->addWidget(radio5);
     groupBox3->setLayout(vbox3);
     buttons->addWidget(groupBox3);
-    outer->addLayout(buttons);
 
     // Color Picker
     QPushButton *colorPickerButton = new QPushButton("Change Color");
@@ -442,6 +454,22 @@ QWidget *glShaderWindow::makeAuxWindow()
     hboxColorPicker->addWidget(colorPickerLabel);
     outer->addLayout(hboxColorPicker);
     outer->addWidget(colorPickerButton);
+
+    // Use Multiple Spheres Radio
+    QGroupBox *groupBox4 = new QGroupBox("Use Multiple Spheres");
+    QRadioButton *radio6 = new QRadioButton("Single Sphere");
+    QRadioButton *radio7 = new QRadioButton("Multiple Spheres");
+    if (useMultipleSpheres) radio7->setChecked(true);
+    else radio6->setChecked(true);
+    connect(radio6, SIGNAL(clicked()), this, SLOT(useSingleSphereClicked()));
+    connect(radio7, SIGNAL(clicked()), this, SLOT(useMultipleSpheresClicked()));
+
+    QVBoxLayout *vbox4 = new QVBoxLayout;
+    vbox4->addWidget(radio6);
+    vbox4->addWidget(radio7);
+    groupBox4->setLayout(vbox4);
+    buttons->addWidget(groupBox4);
+    outer->addLayout(buttons);
 
     auxWidget->setLayout(outer);
     return auxWidget;
@@ -1295,6 +1323,7 @@ void glShaderWindow::render()
     m_program->setUniformValue("useTexture", useTexture);
     m_program->setUniformValue("modelColor", modelColor);
     m_program->setUniformValue("radius", modelMesh->bsphere.r);
+    m_program->setUniformValue("multipleSpheres", useMultipleSpheres);
 	if (m_program->uniformLocation("colorTexture") != -1) m_program->setUniformValue("colorTexture", 0);
     if (m_program->uniformLocation("envMap") != -1)  m_program->setUniformValue("envMap", 1);
 	else if (m_program->uniformLocation("permTexture") != -1)  m_program->setUniformValue("permTexture", 1);
